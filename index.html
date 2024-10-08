@@ -1,0 +1,100 @@
+<!-- html boilerplate -->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PDF Viewer</title>
+    <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist/build/pdf.js"></script>
+    <style>
+      body {
+        margin: 0;
+      }
+    </style>
+  </head>
+
+  <body>
+    <button id="prev">Previous</button>
+    <button id="next">Next</button>
+    <canvas id="pdf_canvas"></canvas>
+    <script>
+      let currentPage = 1;
+      let dragStartY = null;
+      let pageCtxs = {};
+      const pdfCanvas = document.getElementById("pdf_canvas");
+      pdfjsLib.getDocument("hw00.pdf").promise.then((pdf) => {
+        const ctx = pdfCanvas.getContext("2d");
+        const renderPage = () => {
+          if (pageCtxs[currentPage] !== undefined) {
+            updateCanvas(pageCtxs[currentPage]);
+            return;
+          }
+          pdf.getPage(currentPage).then((page) => {
+            const viewport = page.getViewport({ scale: 1 });
+            pdfCanvas.height = viewport.height;
+            pdfCanvas.width = viewport.width;
+            page.render({ canvasContext: ctx, viewport });
+          });
+        };
+        renderPage();
+        document.getElementById("prev").addEventListener("click", () => {
+          if (currentPage <= 1) return;
+          currentPage -= 1;
+          renderPage();
+        });
+        document.getElementById("next").addEventListener("click", () => {
+          if (currentPage >= pdf.numPages) return;
+          currentPage += 1;
+          renderPage();
+        });
+      });
+      pdfCanvas.addEventListener("mousedown", (e) => {
+        dragStartY = e.clientY;
+      });
+
+      pdfCanvas.addEventListener("mouseup", (e) => {
+        const dragEndY = e.clientY;
+        if (dragStartY !== null && dragEndY !== dragStartY) {
+          insertWhitespace(
+            Math.min(dragStartY, dragEndY),
+            Math.max(dragStartY, dragEndY)
+          );
+          dragStartY = null;
+        }
+      });
+      const insertWhitespace = (startY, endY) => {
+        const delta = endY - startY;
+        if (pageCtxs[currentPage] === undefined) {
+          const emptyCanvas = document.createElement("canvas");
+          const emptyCtx = emptyCanvas.getContext("2d");
+          pageCtxs[currentPage] = emptyCtx;
+        }
+        const canvasCtx = pdfCanvas.getContext("2d");
+        const newCtx = pageCtxs[currentPage];
+        const startImg = canvasCtx.getImageData(0, 0, pdfCanvas.width, startY);
+        const endImg = canvasCtx.getImageData(
+          0,
+          startY,
+          pdfCanvas.width,
+          pdfCanvas.height
+        );
+
+        newCtx.canvas.width = pdfCanvas.width;
+        newCtx.canvas.height = pdfCanvas.height + delta;
+        newCtx.fillStyle = "white";
+        newCtx.putImageData(startImg, 0, 0);
+        newCtx.fillRect(0, startY, pdfCanvas.width, delta);
+        newCtx.putImageData(endImg, 0, endY);
+        // document.body.appendChild(newCtx.canvas);
+        updateCanvas(newCtx);
+      };
+      const updateCanvas = (newCtx) => {
+        canvasCtx = pdfCanvas.getContext("2d");
+        pdfCanvas.width = newCtx.canvas.width;
+        pdfCanvas.height = newCtx.canvas.height;
+        canvasCtx.drawImage(newCtx.canvas, 0, 0);
+      };
+    </script>
+  </body>
+</html>
