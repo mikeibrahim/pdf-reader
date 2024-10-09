@@ -11,89 +11,85 @@
       body {
         margin: 0;
       }
+      #canvas_holder {
+        display: flex;
+        flex-direction: column;
+        /* max cols = 1 */
+        width: 100vw;
+        /* center */
+        justify-content: center;
+        align-items: center;
+        flex-basis: 60vw;
+      }
     </style>
   </head>
 
   <body>
-    <button id="prev">Previous</button>
-    <button id="next">Next</button>
-    <canvas id="pdf_canvas"></canvas>
+    <h1>PDF Whitespace Insertion</h1>
+    <input type="file" id="pdf-file" accept="application/pdf" />
+    <div id="canvas_holder"></div>
+
     <script>
-      let currentPage = 1;
+      let ctxs = [];
       let dragStartY = null;
-      let pageCtxs = {};
-      const pdfCanvas = document.getElementById("pdf_canvas");
-      pdfjsLib.getDocument("hw00.pdf").promise.then((pdf) => {
-        const ctx = pdfCanvas.getContext("2d");
-        const renderPage = () => {
-          if (pageCtxs[currentPage] !== undefined) {
-            updateCanvas(pageCtxs[currentPage]);
-            return;
+      let canvasHolder = document.getElementById("canvas_holder");
+
+      document.getElementById("pdf-file").addEventListener("change", async (e) => {
+        const file = e.target.files[0];
+        if (file && file.type === "application/pdf") {
+          const reader = new FileReader();
+          reader.onload = function (event) {
+            const pdfData = event.target.result;
+            loadPdf(pdfData);
+          };
+          reader.readAsArrayBuffer(file);
+        } else {
+          alert("Please select a valid PDF file.");
+        }
+      });
+
+      const loadPdf = (pdfData) => {
+        pdfjsLib.getDocument({ data: pdfData }).promise.then((pdf) => {
+          // Create the PDF canvases
+          for (let i = 1; i <= pdf.numPages; i++) {
+            const canvas = document.createElement("canvas");
+            canvasHolder.appendChild(canvas);
+            const ctx = canvas.getContext("2d");
+            ctxs.push(ctx);
+
+            // Render the pages to the ctx
+            pdf.getPage(i).then((page) => {
+              const viewport = page.getViewport({ scale: 1 });
+              canvas.height = viewport.height;
+              canvas.width = viewport.width;
+              page.render({ canvasContext: ctx, viewport });
+            });
+
+            // Event Handling
+            canvas.addEventListener("mousedown", (e) => (dragStartY = e.clientY + window.scrollY));
+            canvas.addEventListener("mouseup", (e) => {
+              const dragEndY = e.clientY + window.scrollY;
+              if (dragStartY !== null && dragEndY !== dragStartY) {
+                const yDiff = ctx.canvas.getBoundingClientRect().top + window.scrollY;
+                insertWhitespace(ctx, Math.min(dragStartY, dragEndY) - yDiff, Math.max(dragStartY, dragEndY) - yDiff);
+                dragStartY = null;
+              }
+            });
           }
-          pdf.getPage(currentPage).then((page) => {
-            const viewport = page.getViewport({ scale: 1 });
-            pdfCanvas.height = viewport.height;
-            pdfCanvas.width = viewport.width;
-            page.render({ canvasContext: ctx, viewport });
-          });
-        };
-        renderPage();
-        document.getElementById("prev").addEventListener("click", () => {
-          if (currentPage <= 1) return;
-          currentPage -= 1;
-          renderPage();
         });
-        document.getElementById("next").addEventListener("click", () => {
-          if (currentPage >= pdf.numPages) return;
-          currentPage += 1;
-          renderPage();
-        });
-      });
-      pdfCanvas.addEventListener("mousedown", (e) => {
-        dragStartY = e.clientY;
-      });
-
-      pdfCanvas.addEventListener("mouseup", (e) => {
-        const dragEndY = e.clientY;
-        if (dragStartY !== null && dragEndY !== dragStartY) {
-          insertWhitespace(
-            Math.min(dragStartY, dragEndY),
-            Math.max(dragStartY, dragEndY)
-          );
-          dragStartY = null;
-        }
-      });
-      const insertWhitespace = (startY, endY) => {
-        const delta = endY - startY;
-        if (pageCtxs[currentPage] === undefined) {
-          const emptyCanvas = document.createElement("canvas");
-          const emptyCtx = emptyCanvas.getContext("2d");
-          pageCtxs[currentPage] = emptyCtx;
-        }
-        const canvasCtx = pdfCanvas.getContext("2d");
-        const newCtx = pageCtxs[currentPage];
-        const startImg = canvasCtx.getImageData(0, 0, pdfCanvas.width, startY);
-        const endImg = canvasCtx.getImageData(
-          0,
-          startY,
-          pdfCanvas.width,
-          pdfCanvas.height
-        );
-
-        newCtx.canvas.width = pdfCanvas.width;
-        newCtx.canvas.height = pdfCanvas.height + delta;
-        newCtx.fillStyle = "white";
-        newCtx.putImageData(startImg, 0, 0);
-        newCtx.fillRect(0, startY, pdfCanvas.width, delta);
-        newCtx.putImageData(endImg, 0, endY);
-        // document.body.appendChild(newCtx.canvas);
-        updateCanvas(newCtx);
       };
-      const updateCanvas = (newCtx) => {
-        canvasCtx = pdfCanvas.getContext("2d");
-        pdfCanvas.width = newCtx.canvas.width;
-        pdfCanvas.height = newCtx.canvas.height;
-        canvasCtx.drawImage(newCtx.canvas, 0, 0);
+
+      const insertWhitespace = (ctx, startY, endY) => {
+        const delta = endY - startY;
+        const canvas = ctx.canvas;
+        const startImg = ctx.getImageData(0, 0, canvas.width, startY);
+        const endImg = ctx.getImageData(0, startY, canvas.width, canvas.height);
+
+        canvas.height += delta;
+        ctx.fillStyle = "white";
+        ctx.putImageData(startImg, 0, 0);
+        ctx.fillRect(0, startY, canvas.width, delta);
+        ctx.putImageData(endImg, 0, endY);
       };
     </script>
   </body>
