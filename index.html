@@ -11,15 +11,46 @@
       body {
         margin: 0;
       }
+      h1 {
+        height: 50px;
+        margin: 0;
+      }
+      #pdf-file {
+        display: block;
+        height: 30px;
+        margin: 10px auto;
+      }
       #canvas_holder {
         display: flex;
         flex-direction: column;
-        /* max cols = 1 */
         width: 100vw;
-        /* center */
         justify-content: center;
         align-items: center;
         flex-basis: 60vw;
+      }
+      #canvas_holder canvas {
+        border: 1px solid black;
+        margin: -1px;
+      }
+      .cursor {
+        display: block;
+        position: absolute;
+        width: 100vw;
+        height: 1px;
+        background-color: black;
+      }
+      #cursor_fill {
+        display: block;
+        position: absolute;
+        opacity: 0.5;
+        left: 0;
+        width: 100vw;
+      }
+      .guideline {
+        position: absolute;
+        width: 100vw;
+        height: 1px;
+        background-color: rgba(70, 28, 255, 0.5);
       }
     </style>
   </head>
@@ -28,11 +59,23 @@
     <h1>PDF Whitespace Insertion</h1>
     <input type="file" id="pdf-file" accept="application/pdf" />
     <div id="canvas_holder"></div>
+    <div class="cursor" id="cursor_left"></div>
+    <div class="cursor" id="cursor_right"></div>
+    <div id="cursor_fill"></div>
 
     <script>
       let ctxs = [];
       let dragStartY = null;
-      let canvasHolder = document.getElementById("canvas_holder");
+      const canvasHolder = document.getElementById("canvas_holder");
+      const cursorLeft = document.getElementById("cursor_left");
+      const cursorRight = document.getElementById("cursor_right");
+      const cursorFill = document.getElementById("cursor_fill");
+      cursorFill.style.backgroundColor = "green";
+      let dragIdx = null;
+      let isAdding = true;
+      let pageHeight = null;
+      const guidelines = [];
+      const history = [];
 
       document.getElementById("pdf-file").addEventListener("change", async (e) => {
         const file = e.target.files[0];
@@ -63,24 +106,42 @@
               canvas.height = viewport.height;
               canvas.width = viewport.width;
               page.render({ canvasContext: ctx, viewport });
+              pageHeight = viewport.height;
             });
 
             // Event Handling
-            canvas.addEventListener("mousedown", (e) => (dragStartY = e.clientY + window.scrollY));
+            canvas.addEventListener("mousedown", (e) => {
+              dragStartY = e.clientY + window.scrollY;
+              dragIdx = i - 1;
+            });
             canvas.addEventListener("mouseup", (e) => {
+              if (dragIdx !== i - 1) return;
+              dragIdx = null;
               const dragEndY = e.clientY + window.scrollY;
               if (dragStartY !== null && dragEndY !== dragStartY) {
                 const yDiff = ctx.canvas.getBoundingClientRect().top + window.scrollY;
-                insertWhitespace(ctx, Math.min(dragStartY, dragEndY) - yDiff, Math.max(dragStartY, dragEndY) - yDiff);
-                dragStartY = null;
+                const action = e.shiftKey ? removePdfData : insertWhitespace;
+                action(
+                  ctx,
+                  (e.shiftKey ? Math.min(dragStartY, dragEndY) : dragStartY) - yDiff,
+                  Math.abs(dragStartY - dragEndY),
+                  true
+                );
+                updatePageGuidelines();
               }
+              dragStartY = null;
+              cursorFill.style.height = "0";
             });
           }
         });
       };
 
-      const insertWhitespace = (ctx, startY, endY) => {
-        const delta = endY - startY;
+      // User Actions
+      const insertWhitespace = (ctx, startY, delta, saveHistory) => {
+        console.log("inserting whitespace: ", startY, delta);
+
+        if (saveHistory) history.push({ undoAction: () => removePdfData(ctx, startY, delta, false) });
+
         const canvas = ctx.canvas;
         const startImg = ctx.getImageData(0, 0, canvas.width, startY);
         const endImg = ctx.getImageData(0, startY, canvas.width, canvas.height);
@@ -89,7 +150,82 @@
         ctx.fillStyle = "white";
         ctx.putImageData(startImg, 0, 0);
         ctx.fillRect(0, startY, canvas.width, delta);
-        ctx.putImageData(endImg, 0, endY);
+        ctx.putImageData(endImg, 0, startY + delta);
+      };
+      const removePdfData = (ctx, startY, delta, saveHistory) => {
+        console.log("removing data: ", startY, delta);
+        if (saveHistory) {
+          const removedData = ctx.getImageData(0, startY, ctx.canvas.width, delta);
+          history.push({ undoAction: () => addPdfData(ctx, startY, removedData, false) });
+        }
+
+        const canvas = ctx.canvas;
+        const startImg = ctx.getImageData(0, 0, canvas.width, startY);
+        const endImg = ctx.getImageData(0, startY + delta, canvas.width, canvas.height);
+
+        canvas.height -= delta;
+        ctx.putImageData(startImg, 0, 0);
+        ctx.putImageData(endImg, 0, startY);
+      };
+      // Used to undo the removePdfData action
+      const addPdfData = (ctx, startY, imageData) => {
+        console.log("adding data: ", startY, imageData.height);
+        const canvas = ctx.canvas;
+        const startImg = ctx.getImageData(0, 0, canvas.width, startY);
+        const endImg = ctx.getImageData(0, startY, canvas.width, canvas.height);
+
+        canvas.height += imageData.height;
+        ctx.putImageData(startImg, 0, 0);
+        ctx.putImageData(imageData, 0, startY);
+        ctx.putImageData(endImg, 0, startY + imageData.height);
+      };
+
+      // Mouse Visuals
+      document.addEventListener("mousemove", (e) => {
+        cursorLeft.style.left = -window.innerWidth + e.clientX - 2 + "px";
+        cursorRight.style.left = e.clientX + 2 + "px";
+        cursorLeft.style.top = e.clientY + window.scrollY + "px";
+        cursorRight.style.top = e.clientY + window.scrollY + "px";
+        cursorFill.style.top = Math.min(e.clientY + window.scrollY + 2, dragStartY - 2) + "px";
+        if (dragStartY !== null) cursorFill.style.height = Math.abs(dragStartY - (e.clientY + window.scrollY)) + "px";
+      });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Shift") {
+          isAdding = false;
+          cursorFill.style.backgroundColor = "red";
+        }
+        if (e.key === "z" && (e.ctrlKey || e.metaKey)) {
+          console.log("undo");
+          undo();
+        }
+      });
+      document.addEventListener("keyup", (e) => {
+        if (e.key === "Shift") {
+          isAdding = true;
+          cursorFill.style.backgroundColor = "green";
+        }
+      });
+
+      const updatePageGuidelines = () => {
+        let totalHeight = 0;
+        for (let i = 0; i < ctxs.length; i++) totalHeight += ctxs[i].canvas.height;
+        let numGuidelines = Math.floor(totalHeight / pageHeight);
+        guidelines.forEach((guideline) => guideline.remove());
+
+        for (let i = 1; i <= numGuidelines; i++) {
+          const guideline = document.createElement("div");
+          guideline.className = "guideline";
+          guideline.style.top = i * pageHeight + 100 + "px";
+          document.body.appendChild(guideline);
+          guidelines.push(guideline);
+        }
+      };
+      updatePageGuidelines();
+      const undo = () => {
+        if (history.length === 0) return;
+        const { undoAction } = history.pop();
+        undoAction();
+        updatePageGuidelines();
       };
     </script>
   </body>
