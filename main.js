@@ -10,6 +10,7 @@ let dragStartY = null;
 let dragIdx = null;
 let isAdding = true;
 let pageHeight = null;
+let whitespaceCover = false;
 
 document.getElementById("pdf-file").addEventListener("change", async (e) => {
   const file = e.target.files[0];
@@ -52,6 +53,8 @@ document.getElementById("export-button").addEventListener("click", () => {
 });
 
 const loadPdf = (pdfData) => {
+  ctxs.forEach((ctx) => ctx.canvas.remove());
+  ctxs.length = 0;
   pdfjsLib.getDocument({ data: pdfData }).promise.then((pdf) => {
     // Create the PDF canvases
     for (let i = 1; i <= pdf.numPages; i++) {
@@ -73,17 +76,22 @@ const loadPdf = (pdfData) => {
       canvas.addEventListener("mousedown", (e) => {
         dragStartY = e.clientY + window.scrollY;
         dragIdx = i - 1;
+        whitespaceCover = e.button === 2;
+        cursorFill.style.backgroundColor = whitespaceCover ? "orange" : "green";
       });
       canvas.addEventListener("mouseup", (e) => {
-        if (dragIdx !== i - 1) return;
+        if (dragIdx !== i - 1) {
+          cursorFill.style.height = "0";
+          dragStartY = null;
+        }
         dragIdx = null;
         const dragEndY = e.clientY + window.scrollY;
         if (dragStartY !== null && dragEndY !== dragStartY) {
           const yDiff = ctx.canvas.getBoundingClientRect().top + window.scrollY;
-          const action = e.shiftKey ? removePdfData : insertWhitespace;
+          const action = e.shiftKey ? removePdfData : whitespaceCover ? coverPdfData : insertWhitespace;
           action(
             ctx,
-            (e.shiftKey ? Math.min(dragStartY, dragEndY) : dragStartY) - yDiff,
+            (e.shiftKey || whitespaceCover ? Math.min(dragStartY, dragEndY) : dragStartY) - yDiff,
             Math.abs(dragStartY - dragEndY),
             true
           );
@@ -125,6 +133,27 @@ const removePdfData = (ctx, startY, delta, saveHistory) => {
   ctx.putImageData(endImg, 0, startY);
 };
 
+const coverPdfData = (ctx, startY, delta, saveHistory) => {
+  if (saveHistory) {
+    const coveredData = ctx.getImageData(0, startY, ctx.canvas.width, delta);
+    history.push({
+      undoAction: () => {
+        removePdfData(ctx, startY, delta, false);
+        addPdfData(ctx, startY, coveredData, false);
+      },
+    });
+  }
+
+  const canvas = ctx.canvas;
+  const startImg = ctx.getImageData(0, 0, canvas.width, startY);
+  const endImg = ctx.getImageData(0, startY + delta, canvas.width, canvas.height);
+
+  ctx.fillStyle = "white";
+  ctx.putImageData(startImg, 0, 0);
+  ctx.fillRect(0, startY, canvas.width, delta);
+  ctx.putImageData(endImg, 0, startY + delta);
+};
+
 const addPdfData = (ctx, startY, imageData) => {
   const canvas = ctx.canvas;
   const startImg = ctx.getImageData(0, 0, canvas.width, startY);
@@ -157,15 +186,21 @@ const undo = () => {
   undoAction();
   updatePageGuidelines();
 };
-
-// Mouse Visuals
-document.addEventListener("mousemove", (e) => {
+const updateCursor = (e) => {
   cursorLeft.style.left = -window.innerWidth + e.clientX - 2 + "px";
   cursorRight.style.left = e.clientX + 2 + "px";
   cursorLeft.style.top = e.clientY + window.scrollY + "px";
   cursorRight.style.top = e.clientY + window.scrollY + "px";
-  cursorFill.style.top = Math.min(e.clientY + window.scrollY + 2, dragStartY - 2) + "px";
+};
+
+// Mouse Visuals
+document.addEventListener("mousemove", (e) => {
+  updateCursor(e);
+  cursorFill.style.top = Math.min(e.clientY + window.scrollY + 1, dragStartY - 3) + 1 + "px";
   if (dragStartY !== null) cursorFill.style.height = Math.abs(dragStartY - (e.clientY + window.scrollY)) + "px";
+});
+document.addEventListener("scroll", (e) => {
+  updateCursor({ clientX: 0, clientY: 0 });
 });
 
 document.addEventListener("keydown", (e) => {
@@ -181,8 +216,9 @@ document.addEventListener("keydown", (e) => {
 document.addEventListener("keyup", (e) => {
   if (e.key === "Shift") {
     isAdding = true;
-    cursorFill.style.backgroundColor = "green";
+    cursorFill.style.backgroundColor = whitespaceCover ? "orange" : "green";
   }
 });
+document.addEventListener("contextmenu", (event) => event.preventDefault());
 
 updatePageGuidelines();
