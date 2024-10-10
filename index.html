@@ -7,17 +7,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PDF Viewer</title>
     <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist/build/pdf.js"></script>
+    <script src="https://unpkg.com/jspdf@latest/dist/jspdf.umd.min.js"></script>
     <link rel="stylesheet" href="style.css" />
   </head>
 
   <body>
-    <h1>PDF Whitespace Insertion</h1>
-    <input type="file" id="pdf-file" accept="application/pdf" />
+    <h1><div>PDF Whitespace Insertion</div></h1>
+    <div id="button-container">
+      <input type="file" id="pdf-file" accept="application/pdf" />
+      <button id="export-button">Export</button>
+    </div>
     <div id="canvas_holder"></div>
     <div class="cursor" id="cursor_left"></div>
     <div class="cursor" id="cursor_right"></div>
     <div id="cursor_fill"></div>
 
-    <script src="main.js"></script>
+    <script type="module" src="main.js"></script>
   </body>
 </html>

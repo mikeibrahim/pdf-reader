@@ -1,15 +1,15 @@
-let ctxs = [];
-let dragStartY = null;
 const canvasHolder = document.getElementById("canvas_holder");
 const cursorLeft = document.getElementById("cursor_left");
 const cursorRight = document.getElementById("cursor_right");
 const cursorFill = document.getElementById("cursor_fill");
-cursorFill.style.backgroundColor = "green";
+const guidelines = [];
+const history = [];
+const ctxs = [];
+
+let dragStartY = null;
 let dragIdx = null;
 let isAdding = true;
 let pageHeight = null;
-const guidelines = [];
-const history = [];
 
 document.getElementById("pdf-file").addEventListener("change", async (e) => {
   const file = e.target.files[0];
@@ -24,6 +24,32 @@ document.getElementById("pdf-file").addEventListener("change", async (e) => {
     alert("Please select a valid PDF file.");
   }
 });
+document.getElementById("export-button").addEventListener("click", () => {
+  // Combine all ctx to a single canvas, then split up the canvas into pages based on pageHeight
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  canvas.width = ctxs[0].canvas.width;
+  canvas.height = ctxs.reduce((acc, ctx) => acc + ctx.canvas.height, 0);
+  let y = 0;
+  ctxs.forEach((c) => {
+    ctx.drawImage(c.canvas, 0, y);
+    y += c.canvas.height;
+  });
+
+  const pdf = new jspdf.jsPDF("p", "pt", [canvas.width / 1.33, pageHeight / 1.33]);
+  const numPages = Math.ceil(canvas.height / pageHeight);
+  for (let i = 0; i < numPages; i++) {
+    const pageCanvas = document.createElement("canvas");
+    const pageCtx = pageCanvas.getContext("2d");
+    pageCanvas.width = canvas.width;
+    pageCanvas.height = pageHeight;
+    const ctxImage = ctx.getImageData(0, i * pageHeight, canvas.width, pageHeight);
+    pageCtx.putImageData(ctxImage, 0, 0);
+    pdf.addImage(pageCanvas.toDataURL("image/png"), "PNG", 0, 0);
+    if (i !== numPages - 1) pdf.addPage();
+  }
+  pdf.save("output.pdf");
+});
 
 const loadPdf = (pdfData) => {
   pdfjsLib.getDocument({ data: pdfData }).promise.then((pdf) => {
@@ -36,7 +62,7 @@ const loadPdf = (pdfData) => {
 
       // Render the pages to the ctx
       pdf.getPage(i).then((page) => {
-        const viewport = page.getViewport({ scale: 1 });
+        const viewport = page.getViewport({ scale: 1.5 });
         canvas.height = viewport.height;
         canvas.width = viewport.width;
         page.render({ canvasContext: ctx, viewport });
@@ -70,10 +96,7 @@ const loadPdf = (pdfData) => {
   });
 };
 
-// User Actions
 const insertWhitespace = (ctx, startY, delta, saveHistory) => {
-  console.log("inserting whitespace: ", startY, delta);
-
   if (saveHistory) history.push({ undoAction: () => removePdfData(ctx, startY, delta, false) });
 
   const canvas = ctx.canvas;
@@ -86,8 +109,8 @@ const insertWhitespace = (ctx, startY, delta, saveHistory) => {
   ctx.fillRect(0, startY, canvas.width, delta);
   ctx.putImageData(endImg, 0, startY + delta);
 };
+
 const removePdfData = (ctx, startY, delta, saveHistory) => {
-  console.log("removing data: ", startY, delta);
   if (saveHistory) {
     const removedData = ctx.getImageData(0, startY, ctx.canvas.width, delta);
     history.push({ undoAction: () => addPdfData(ctx, startY, removedData, false) });
@@ -101,9 +124,8 @@ const removePdfData = (ctx, startY, delta, saveHistory) => {
   ctx.putImageData(startImg, 0, 0);
   ctx.putImageData(endImg, 0, startY);
 };
-// Used to undo the removePdfData action
+
 const addPdfData = (ctx, startY, imageData) => {
-  console.log("adding data: ", startY, imageData.height);
   const canvas = ctx.canvas;
   const startImg = ctx.getImageData(0, 0, canvas.width, startY);
   const endImg = ctx.getImageData(0, startY, canvas.width, canvas.height);
@@ -113,32 +135,6 @@ const addPdfData = (ctx, startY, imageData) => {
   ctx.putImageData(imageData, 0, startY);
   ctx.putImageData(endImg, 0, startY + imageData.height);
 };
-
-// Mouse Visuals
-document.addEventListener("mousemove", (e) => {
-  cursorLeft.style.left = -window.innerWidth + e.clientX - 2 + "px";
-  cursorRight.style.left = e.clientX + 2 + "px";
-  cursorLeft.style.top = e.clientY + window.scrollY + "px";
-  cursorRight.style.top = e.clientY + window.scrollY + "px";
-  cursorFill.style.top = Math.min(e.clientY + window.scrollY + 2, dragStartY - 2) + "px";
-  if (dragStartY !== null) cursorFill.style.height = Math.abs(dragStartY - (e.clientY + window.scrollY)) + "px";
-});
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Shift") {
-    isAdding = false;
-    cursorFill.style.backgroundColor = "red";
-  }
-  if (e.key === "z" && (e.ctrlKey || e.metaKey)) {
-    console.log("undo");
-    undo();
-  }
-});
-document.addEventListener("keyup", (e) => {
-  if (e.key === "Shift") {
-    isAdding = true;
-    cursorFill.style.backgroundColor = "green";
-  }
-});
 
 const updatePageGuidelines = () => {
   let totalHeight = 0;
@@ -154,10 +150,39 @@ const updatePageGuidelines = () => {
     guidelines.push(guideline);
   }
 };
-updatePageGuidelines();
+
 const undo = () => {
   if (history.length === 0) return;
   const { undoAction } = history.pop();
   undoAction();
   updatePageGuidelines();
 };
+
+// Mouse Visuals
+document.addEventListener("mousemove", (e) => {
+  cursorLeft.style.left = -window.innerWidth + e.clientX - 2 + "px";
+  cursorRight.style.left = e.clientX + 2 + "px";
+  cursorLeft.style.top = e.clientY + window.scrollY + "px";
+  cursorRight.style.top = e.clientY + window.scrollY + "px";
+  cursorFill.style.top = Math.min(e.clientY + window.scrollY + 2, dragStartY - 2) + "px";
+  if (dragStartY !== null) cursorFill.style.height = Math.abs(dragStartY - (e.clientY + window.scrollY)) + "px";
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Shift") {
+    isAdding = false;
+    cursorFill.style.backgroundColor = "red";
+  }
+  if (e.key === "z" && (e.ctrlKey || e.metaKey)) {
+    undo();
+  }
+});
+
+document.addEventListener("keyup", (e) => {
+  if (e.key === "Shift") {
+    isAdding = true;
+    cursorFill.style.backgroundColor = "green";
+  }
+});
+
+updatePageGuidelines();

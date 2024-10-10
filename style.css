@@ -1,15 +1,28 @@
+@import url("https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap");
+
 body {
   margin: 0;
+  font-family: "Roboto", sans-serif;
 }
+
 h1 {
   height: 50px;
   margin: 0;
+  font-size: 24px;
+  font-weight: 500;
+  color: #333;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-#pdf-file {
-  display: block;
+
+#button-container {
+  display: flex;
   height: 30px;
   margin: 10px auto;
+  justify-content: center;
 }
+
 #canvas_holder {
   display: flex;
   flex-direction: column;
@@ -18,10 +31,12 @@ h1 {
   align-items: center;
   flex-basis: 60vw;
 }
+
 #canvas_holder canvas {
   border: 1px solid black;
   margin: -1px;
 }
+
 .cursor {
   display: block;
   position: absolute;
@@ -29,13 +44,16 @@ h1 {
   height: 1px;
   background-color: black;
 }
+
 #cursor_fill {
   display: block;
   position: absolute;
   opacity: 0.5;
   left: 0;
   width: 100vw;
+  background-color: green;
 }
+
 .guideline {
   position: absolute;
   width: 100vw;
