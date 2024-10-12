@@ -77,7 +77,7 @@ const loadPdf = (pdfData) => {
         dragStartY = e.clientY + window.scrollY;
         dragIdx = i - 1;
         whitespaceCover = e.button === 2;
-        cursorFill.style.backgroundColor = whitespaceCover ? "orange" : "green";
+        cursorFill.style.backgroundColor = isAdding ? (whitespaceCover ? "orange" : "green") : "red";
       });
       canvas.addEventListener("mouseup", (e) => {
         if (dragIdx !== i - 1) {
@@ -196,7 +196,7 @@ const updateCursor = (e) => {
 // Mouse Visuals
 document.addEventListener("mousemove", (e) => {
   updateCursor(e);
-  cursorFill.style.top = Math.min(e.clientY + window.scrollY + 1, dragStartY - 3) + 1 + "px";
+  cursorFill.style.top = Math.min(e.clientY + window.scrollY, dragStartY - 4) + 2 + "px";
   if (dragStartY !== null) cursorFill.style.height = Math.abs(dragStartY - (e.clientY + window.scrollY)) + "px";
 });
 document.addEventListener("scroll", (e) => {
